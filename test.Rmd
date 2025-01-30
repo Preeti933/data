@@ -1,0 +1,110 @@
+
+
+## Introduction
+
+This R Markdown file merges house price data with LSOA codes from a postcode dataset. The merging is based on the postcode (`post`) in the house price dataset and `pcd7` or `pcd8` in the postcode dataset.
+
+---
+
+## Load Required Libraries
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+
+# Load required libraries
+library(dplyr)
+library(readr)
+```
+
+```{r}
+# Read house price datasets
+house_prices_2023 <- read_csv("house_price_2023.csv")
+house_prices_2022 <- read_csv("house_price_2022.csv")
+house_prices_2021 <- read_csv("house_price_2021.csv")
+
+# Read postcode dataset
+postcode_data <- read_csv("postcode.csv")
+
+
+
+```
+
+
+```{r}
+# Convert column names to lowercase for consistency
+colnames(house_prices_2023) <- tolower(colnames(house_prices_2023))
+colnames(house_prices_2022) <- tolower(colnames(house_prices_2022))
+colnames(house_prices_2021) <- tolower(colnames(house_prices_2021))
+colnames(postcode_data) <- tolower(colnames(postcode_data))
+
+# Select only relevant columns from postcode dataset
+postcode_data <- postcode_data %>% select(pcd7, pcd8, pcds, lsoa11cd)
+
+# Function to merge house price dataset with LSOA codes
+merge_lsoa <- function(house_prices) {
+  house_prices <- house_prices %>%
+    left_join(postcode_data %>% select(pcd7, lsoa11cd), by = c("post" = "pcd7")) %>%
+    rename(lsoa11cd_pcd7 = lsoa11cd) %>%
+    left_join(postcode_data %>% select(pcd8, lsoa11cd), by = c("post" = "pcd8")) %>%
+    rename(lsoa11cd_pcd8 = lsoa11cd) %>%
+    left_join(postcode_data %>% select(pcds, lsoa11cd), by = c("post" = "pcds")) %>%
+    rename(lsoa11cd_pcds = lsoa11cd)
+
+  # Ensure missing columns are created if they do not exist
+  if (!"lsoa11cd_pcd7" %in% colnames(house_prices)) house_prices$lsoa11cd_pcd7 <- NA
+  if (!"lsoa11cd_pcd8" %in% colnames(house_prices)) house_prices$lsoa11cd_pcd8 <- NA
+  if (!"lsoa11cd_pcds" %in% colnames(house_prices)) house_prices$lsoa11cd_pcds <- NA
+
+  # Use coalesce to prioritize pcd7, then pcd8, then pcds
+  house_prices <- house_prices %>%
+    mutate(lsoa11cd = coalesce(lsoa11cd_pcd7, lsoa11cd_pcd8, lsoa11cd_pcds)) %>%
+    select(-lsoa11cd_pcd7, -lsoa11cd_pcd8, -lsoa11cd_pcds)
+
+  return(house_prices)
+}
+
+# Apply function to each dataset
+house_prices_2023 <- merge_lsoa(house_prices_2023)
+house_prices_2022 <- merge_lsoa(house_prices_2022)
+house_prices_2021 <- merge_lsoa(house_prices_2021)
+
+
+
+```
+
+```{r}
+
+# Export updated datasets with LSOA codes
+write_csv(house_prices_2023, "house_price_2023_with_lsoa.csv")
+write_csv(house_prices_2022, "house_price_2022_with_lsoa.csv")
+write_csv(house_prices_2021, "house_price_2021_with_lsoa.csv")
+
+# Confirm files are saved
+cat("Updated datasets saved as:\n")
+cat("- house_price_2023_with_lsoa.csv\n")
+cat("- house_price_2022_with_lsoa.csv\n")
+cat("- house_price_2021_with_lsoa.csv\n")
+
+
+```
+
+
+
+
+
+
+
+
+
+```{r}
+```
+
+
+```{r}
+```
+
+
+```{r}
+```
+
+
+

@@ -1,0 +1,146 @@
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+library(ggplot2)
+library(dplyr)
+library(readr)
+library(tidyr)
+
+
+```
+
+
+```{r}
+# Load the dataset
+broadband_data <- read_csv("broadband_with_county_town.csv")
+
+# Display first few rows
+head(broadband_data)
+
+
+```
+
+```{r}
+
+# Replace variations of Devon with "Devon"
+broadband_data <- broadband_data %>%
+  mutate(county = case_when(
+    county %in% c("East Devon", "Mid Devon", "North Devon", "West Devon") ~ "Devon",
+    TRUE ~ county
+  ))
+
+
+```
+
+
+```{r}
+# Select relevant columns & remove missing values
+broadband_filtered <- broadband_data %>%
+  select(county, town, average_download_speed_mbit_s, maximum_download_speed_mbit_s) %>%
+  filter(!is.na(average_download_speed_mbit_s) & !is.na(maximum_download_speed_mbit_s))
+
+# Filter for Devon and Dorset
+devon_data <- broadband_filtered %>% filter(county == "Devon")
+dorset_data <- broadband_filtered %>% filter(county == "Dorset")
+
+
+
+```
+
+
+
+```{r}
+# Convert data from wide to long format for Devon
+devon_long <- devon_data %>%
+  gather(key = "Speed_Type", value = "Speed", average_download_speed_mbit_s, maximum_download_speed_mbit_s)
+
+# Convert data from wide to long format for Dorset
+dorset_long <- dorset_data %>%
+  gather(key = "Speed_Type", value = "Speed", average_download_speed_mbit_s, maximum_download_speed_mbit_s)
+
+
+
+```
+
+
+```{r}
+ggplot(devon_data, aes(x = reorder(town, -average_download_speed_mbit_s), 
+                       y = average_download_speed_mbit_s)) +
+  geom_bar(stat = "identity", fill = "blue") +
+  coord_flip() +
+  labs(title = "Average Download Speed in Devon (Mbps)", 
+       x = "Town", 
+       y = "Average Speed (Mbps)") +
+  theme_minimal()
+
+
+```
+
+
+
+
+```{r}
+ggplot(dorset_data, aes(x = reorder(town, -average_download_speed_mbit_s), 
+                         y = average_download_speed_mbit_s)) +
+  geom_bar(stat = "identity", fill = "red") +
+  coord_flip() +
+  labs(title = "Average Download Speed in Dorset (Mbps)", 
+       x = "Town", 
+       y = "Average Speed (Mbps)") +
+  theme_minimal()
+
+
+```
+
+
+
+```{r}
+
+ggplot(devon_long, aes(x = reorder(town, -Speed), y = Speed, fill = Speed_Type)) +
+  geom_bar(stat = "identity", position = "dodge", na.rm = TRUE) +
+  coord_flip() +
+  scale_fill_manual(values = c("average_download_speed_mbit_s" = "blue", 
+                               "maximum_download_speed_mbit_s" = "red"),
+                    labels = c("Average Speed", "Maximum Speed")) +
+  labs(title = "Average and Maximum Download Speeds in Devon", 
+       x = "Town", 
+       y = "Speed (Mbps)",
+       fill = "Speed Type") +
+  theme_minimal()
+
+
+```
+
+
+
+```{r}
+
+ggplot(dorset_long, aes(x = reorder(town, -Speed), y = Speed, fill = Speed_Type)) +
+  geom_bar(stat = "identity", position = "dodge", na.rm = TRUE) +
+  coord_flip() +
+  scale_fill_manual(values = c("average_download_speed_mbit_s" = "red", 
+                               "maximum_download_speed_mbit_s" = "darkred"),
+                    labels = c("Average Speed", "Maximum Speed")) +
+  labs(title = "Average and Maximum Download Speeds in Dorset", 
+       x = "Town", 
+       y = "Speed (Mbps)",
+       fill = "Speed Type") +
+  theme_minimal()
+
+
+```
+
+
+
+
+
+
+```{r}
+
+```
+

@@ -1,0 +1,131 @@
+
+
+## Introduction
+
+This report analyzes the relationship between **house prices** and **broadband download speed** in the counties of **Dorset and Devon**. We merge house price data with broadband speed data using the **LSOA codes**, clean the dataset, and perform a **linear regression analysis**.
+
+---
+
+## Load Required Libraries
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+
+# Load necessary libraries
+library(dplyr)
+library(readr)
+library(ggplot2)
+library(tidyr)
+library(broom)
+library(data.table)
+```
+
+```{r}
+# Read large datasets using fread (fast and memory-efficient)
+house_prices <- fread("house_price_2022_with_lsoa.csv", select = c("price", "date", "post", "county", "lsoa11cd"))
+broadband <- fread("broadband_with_lsoa.csv", select = c("lsoa11cd", "median download speed (mbit/s)", "average download speed (mbit/s)"))
+
+# Convert column names to lowercase
+setnames(house_prices, tolower(names(house_prices)))
+setnames(broadband, tolower(names(broadband)))
+
+# Filter only Dorset and Devon before merging (reduces memory usage)
+house_prices_filtered <- house_prices[county %in% c("DORSET", "DEVON")]
+
+# Convert LSOA code to character type for accurate merging
+house_prices_filtered[, lsoa11cd := as.character(lsoa11cd)]
+broadband[, lsoa11cd := as.character(lsoa11cd)]
+
+# Deduplicate broadband data to prevent excessive row expansion
+broadband <- broadband[, .SD[1], by = lsoa11cd]  # Keep only the first occurrence per LSOA
+
+# Merge only relevant columns
+merged_data <- merge(house_prices_filtered, broadband, by = "lsoa11cd", all.x = TRUE, allow.cartesian = FALSE)
+
+# Check structure of optimized dataset
+str(merged_data)
+
+
+```
+
+```{r}
+# Remove rows with missing values
+cleaned_data <- merged_data[!is.na(`median download speed (mbit/s)`) & !is.na(price)]
+
+# Convert county to a factor variable
+cleaned_data[, county := as.factor(county)]
+
+# Summary of cleaned dataset
+summary(cleaned_data)
+
+
+
+```
+
+
+```{r}
+# Scatter plot of house prices vs median download speed
+ggplot(cleaned_data, aes(x = `median download speed (mbit/s)`, y = price, color = county)) +
+  geom_point(alpha = 0.6) +
+  geom_smooth(method = "lm", se = FALSE, color = "black") +
+  labs(title = "House Prices vs Median Download Speed",
+       x = "Median Download Speed (Mbit/s)",
+       y = "House Price (£)",
+       color = "County") +
+  theme_minimal()
+
+
+```
+
+
+
+```{r}
+# Fit the linear regression model
+model <- lm(price ~ `median download speed (mbit/s)` + county, data = cleaned_data)
+
+# Model summary
+summary(model)
+
+
+
+```
+
+
+
+```{r}
+# View model coefficients
+tidy(model)
+
+# Check R-squared value
+glance(model)
+
+
+```
+
+
+
+```{r}
+# Predict house prices using the model
+cleaned_data[, predicted_price := predict(model, newdata = cleaned_data)]
+
+# Residual plot
+ggplot(cleaned_data, aes(x = predicted_price, y = price - predicted_price)) +
+  geom_point(alpha = 0.6) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "red") +
+  labs(title = "Residuals Plot: House Price Predictions",
+       x = "Predicted Price (£)",
+       y = "Residual (Actual - Predicted)") +
+  theme_minimal()
+
+```
+
+
+```{r}
+# Save the optimized cleaned dataset with predictions
+fwrite(cleaned_data, "house_price_broadband_model_data.csv")
+
+# Confirm file is saved
+cat("Final dataset saved as 'house_price_broadband_model_data.csv'.")
+
+
+```
+

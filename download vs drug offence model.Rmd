@@ -1,0 +1,151 @@
+```{r setup, include=FALSE}
+# Load necessary libraries
+library(dplyr)
+library(ggplot2)
+library(tidyr)
+```
+
+### **1. Load and Clean Data**
+```{r load-data}
+# Read the datasets
+crime_data <- read.csv("final_combined_crime_data.csv", stringsAsFactors = FALSE)
+broadband_data <- read.csv("broadband_with_lsoa.csv", stringsAsFactors = FALSE)
+
+# Ensure column names are correctly formatted
+colnames(crime_data) <- tolower(gsub(" ", "_", gsub("\\.", "_", colnames(crime_data))))
+colnames(broadband_data) <- tolower(gsub(" ", "_", gsub("\\.", "_", colnames(broadband_data))))
+
+# Print column names to debug
+print(colnames(crime_data))
+print(colnames(broadband_data))
+
+# Select relevant columns
+crime_data <- crime_data %>% select(lsoa_code, falls_within, month, crime_type)
+broadband_data <- broadband_data %>% select(lsoa11cd, average_download_speed__mbit_s_)
+
+# Normalize county names
+crime_data$falls_within <- trimws(tolower(crime_data$falls_within))
+crime_data <- crime_data %>% mutate(county = case_when(
+  falls_within == "devon & cornwall police" ~ "devon",
+  falls_within == "dorset police" ~ "dorset",
+  TRUE ~ NA_character_
+))
+
+# Extract year from month column
+crime_data$year <- as.integer(substr(crime_data$month, 1, 4))
+
+# Rename broadband column for consistency
+colnames(broadband_data)[colnames(broadband_data) == "lsoa11cd"] <- "lsoa_code"
+colnames(broadband_data)[colnames(broadband_data) == "average_download_speed__mbit_s_"] <- "avg_download_speed"
+
+# Show first few rows of both datasets
+print(head(crime_data))
+print(head(broadband_data))
+```
+
+### **2. Compute Crime Rate by LSOA and Merge with Broadband Data**
+```{r compute-crime-rate}
+# Count total crimes per LSOA per year
+total_crimes <- crime_data %>%
+  group_by(lsoa_code, year) %>%
+  summarise(total_crimes = n(), .groups = 'drop')
+
+# Count drug-related crimes per LSOA per year
+drug_crimes <- crime_data %>%
+  filter(crime_type == "Drugs") %>%
+  group_by(lsoa_code, year) %>%
+  summarise(total_drug_crimes = n(), .groups = 'drop')
+
+# Compute drug offence rate per 10,000 crimes
+crime_rate <- left_join(total_crimes, drug_crimes, by = c("lsoa_code", "year")) %>%
+  mutate(drug_offence_rate = (total_drug_crimes / total_crimes) * 10000)
+
+# Merge with broadband data
+merged_data <- left_join(crime_rate, broadband_data, by = "lsoa_code")
+
+# Debugging: Show merged dataset
+print(nrow(merged_data))
+print(head(merged_data))
+
+# Ensure unique LSOA and county before joining
+crime_data_unique <- crime_data %>% 
+  select(lsoa_code, county) %>%
+  distinct(lsoa_code, .keep_all = TRUE)  # Keep only unique LSOA entries
+
+# Merge without causing row explosion
+merged_data <- left_join(merged_data, crime_data_unique, by = "lsoa_code")
+filtered_data <- merged_data %>% filter(!is.na(county) & county %in% c("devon", "dorset"))
+
+# Debugging: Show filtered dataset after applying county filter
+print(nrow(filtered_data))
+print(head(filtered_data))
+```
+
+### **3. Compute Average Download Speed vs Drug Offence Rate per County**
+```{r avg-download-speed}
+# Compute average download speed and drug offence rate per county
+avg_broadband_crime <- filtered_data %>%
+  group_by(county) %>%
+  summarise(avg_download_speed = mean(avg_download_speed, na.rm = TRUE), 
+            avg_drug_offence_rate = mean(drug_offence_rate, na.rm = TRUE), .groups = 'drop')
+
+# Show computed averages
+print(avg_broadband_crime)
+```
+
+### **4. Visualize Data**
+```{r visualization}
+# Check if filtered_data has rows
+if (nrow(filtered_data) > 0) {
+  print("Plotting data...")
+  
+  # Scatterplot
+  p1 <- ggplot(filtered_data, aes(x = avg_download_speed, y = drug_offence_rate, color = county)) +
+    geom_point() +
+    geom_smooth(method = "lm", se = FALSE) +
+    labs(title = "Average Download Speed vs Drug Offence Rate", x = "Average Download Speed (Mbps)", y = "Drug Offence Rate per 10,000")
+  print(p1)
+  
+  # Barplot of Average Download Speed vs Drug Offence Rate
+  p2 <- ggplot(avg_broadband_crime, aes(x = county, y = avg_download_speed, fill = county)) +
+    geom_bar(stat = "identity") +
+    labs(title = "Average Download Speed by County", x = "County", y = "Average Download Speed (Mbps)")
+  print(p2)
+  
+  # Scatterplot for average download speed vs drug offence rate
+  p3 <- ggplot(avg_broadband_crime, aes(x = avg_download_speed, y = avg_drug_offence_rate, label = county)) +
+    geom_point(size = 4, color = "blue") +
+    geom_text(vjust = -1) +
+    labs(title = "Average Download Speed vs Drug Offence Rate", x = "Average Download Speed (Mbps)", y = "Average Drug Offence Rate per 10,000")
+  print(p3)
+} else {
+  print("No data available for plotting.")
+}
+```
+
+### **5. Build and Evaluate Linear Model**
+```{r linear-model}
+# Fit linear regression model if data exists
+if (nrow(filtered_data) > 0) {
+  model <- lm(drug_offence_rate ~ avg_download_speed + county, data = filtered_data)
+  
+  # Summary of the model
+  print(summary(model))
+  
+  # Check model diagnostics
+  par(mfrow = c(2,2))
+  plot(model)
+} else {
+  print("Not enough data to fit a model.")
+}
+```
+
+### **6. Conclusion**
+```{r conclusion}
+# Print the model summary if available
+if (exists("model")) {
+  print(summary(model))
+} else {
+  print("No model available due to insufficient data.")
+}
+```

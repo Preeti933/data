@@ -1,0 +1,82 @@
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Load Libraries
+```{r}
+library(ggplot2)
+library(dplyr)
+```
+
+## Load Datasets
+```{r}
+house_prices_2021 <- read.csv("house_price_2021_with_lsoa.csv")
+house_prices_2022 <- read.csv("house_price_2022_with_lsoa.csv")
+house_prices_2023 <- read.csv("house_price_2023_with_lsoa.csv")
+
+# Combine datasets
+house_prices <- bind_rows(house_prices_2021, house_prices_2022, house_prices_2023)
+```
+
+## Data Processing
+```{r}
+# Convert date to Date type
+house_prices$date <- as.Date(house_prices$date, format="%d/%m/%Y")
+
+# Extract Year and Month from Date
+house_prices$year <- format(house_prices$date, "%Y")
+house_prices$month <- format(house_prices$date, "%Y-%m")
+
+# Filter for Dorset and Devon counties with correct labels
+house_prices <- house_prices %>%
+  filter(county %in% c("DORSET", "DEVON"))
+
+# Compute Average Price per Town and County
+avg_prices_town <- house_prices %>%
+  group_by(county, town) %>%
+  summarise(avg_price = mean(price, na.rm = TRUE))
+
+# Compute Monthly Average Price per County
+avg_prices_monthly <- house_prices %>%
+  group_by(county, month) %>%
+  summarise(avg_price = mean(price, na.rm = TRUE))
+
+# Convert month to Date format to avoid character-to-date issues
+avg_prices_monthly$month <- as.Date(paste0(avg_prices_monthly$month, "-01"))
+```
+
+## Box Plot: House Prices by Town for Dorset and Devon (Separate Charts, No Labels)
+```{r}
+ggplot(house_prices %>% filter(county == "DORSET"), aes(x = town, y = price, fill = town)) +
+  geom_boxplot() +
+  theme(axis.text.x = element_blank(), axis.ticks.x = element_blank()) +
+  labs(title = "Box Plot of House Prices by Town (Dorset)", y = "Price", x = "Town")
+
+ggplot(house_prices %>% filter(county == "DEVON"), aes(x = town, y = price, fill = town)) +
+  geom_boxplot() +
+  theme(axis.text.x = element_blank(), axis.ticks.x = element_blank()) +
+  labs(title = "Box Plot of House Prices by Town (Devon)", y = "Price", x = "Town")
+```
+
+## Bar Chart: Average House Prices by Town for Dorset and Devon (Separate Charts, No Labels)
+```{r}
+ggplot(avg_prices_town %>% filter(county == "DORSET"), aes(x = town, y = avg_price, fill = town)) +
+  geom_bar(stat = "identity") +
+  theme(axis.text.x = element_blank(), axis.ticks.x = element_blank()) +
+  labs(title = "Average House Prices by Town (Dorset)", y = "Average Price", x = "Town")
+
+ggplot(avg_prices_town %>% filter(county == "DEVON"), aes(x = town, y = avg_price, fill = town)) +
+  geom_bar(stat = "identity") +
+  theme(axis.text.x = element_blank(), axis.ticks.x = element_blank()) +
+  labs(title = "Average House Prices by Town (Devon)", y = "Average Price", x = "Town")
+```
+
+## Line Chart: Monthly Average House Prices Over Time for Dorset and Devon
+```{r}
+ggplot(avg_prices_monthly, aes(x = month, y = avg_price, color = county, group = county)) +
+  geom_line(size = 1) +
+  geom_point(size = 2) +
+  labs(title = "Monthly Trend of Average House Prices (Dorset & Devon)", x = "Month", y = "Average Price")
+```

@@ -1,0 +1,175 @@
+
+
+## Introduction
+
+This analysis investigates the impact of **drug offence rates** on **house prices** in **Dorset and Devon** for **2022**.  
+We merge **house price data** with **crime data** (filtered for drug offences) using **LSOA codes**, then build a **linear regression model** to analyze the relationship.
+
+---
+
+## Load Required Libraries
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+
+# Load libraries for efficient data handling and visualization
+library(data.table)
+library(ggplot2)
+library(broom)
+```
+
+```{r}
+# Read house price dataset for 2022 (optimized for large files)
+house_prices <- fread("house_price_2022_with_lsoa.csv", select = c("price", "date", "post", "county", "lsoa11cd"))
+
+# Read crime dataset (optimized for large files)
+crime_data <- fread("final_combined_crime_data.csv", select = c("Month", "Falls within", "LSOA code", "Crime type"))
+
+# Convert column names to lowercase
+setnames(house_prices, tolower(names(house_prices)))
+setnames(crime_data, tolower(names(crime_data)))
+
+# Standardize column names dynamically
+setnames(crime_data, "falls within", "county")
+setnames(crime_data, "lsoa code", "lsoa11cd")
+setnames(crime_data, "month", "year_month")
+
+# Convert LSOA codes to character for accurate merging
+house_prices[, lsoa11cd := as.character(lsoa11cd)]
+crime_data[, lsoa11cd := as.character(lsoa11cd)]
+
+
+
+```
+
+
+```{r}
+# Print column names to check for typos or spaces
+print(names(crime_data))
+
+# Standardize column names by removing spaces and converting to lowercase
+setnames(crime_data, trimws(names(crime_data)))
+
+# Identify the actual column name for crime type dynamically
+correct_crime_col <- grep("Crime type", names(crime_data), value = TRUE, ignore.case = TRUE)
+
+# Rename column dynamically if found
+if (length(correct_crime_col) > 0) {
+  setnames(crime_data, correct_crime_col, "crime_type")
+}
+
+# Now, filter the dataset using the corrected column name
+crime_data_filtered <- crime_data[year == 2022 & county %in% c("Devon & Cornwall Police", "Dorset Police") & crime_type == "Drugs"]
+
+
+```
+
+
+
+```{r}
+# Count drug offences per LSOA
+drug_offence_rate <- crime_data_filtered[, .N, by = .(lsoa11cd)]
+
+# Rename column for clarity
+setnames(drug_offence_rate, "N", "drug_offences")
+
+```
+
+
+
+```{r}
+
+# Merge house prices with drug offence data using LSOA code
+merged_data <- merge(house_prices_filtered, drug_offence_rate, by = "lsoa11cd", all.x = TRUE)
+
+# Replace NA values in drug_offences with 0 (areas with no recorded drug offences)
+merged_data[is.na(drug_offences), drug_offences := 0]
+
+# Check structure of merged dataset
+str(merged_data)
+
+
+```
+
+
+```{r}
+
+# Scatter plot of house prices vs drug offence rate
+ggplot(merged_data, aes(x = drug_offences, y = price, color = county)) +
+  geom_point(alpha = 0.6) +
+  geom_smooth(method = "lm", se = FALSE, color = "black") +
+  labs(title = "House Prices vs Drug Offence Rate",
+       x = "Number of Drug Offences (per LSOA)",
+       y = "House Price (£)",
+       color = "County") +
+  theme_minimal()
+
+
+```
+
+
+
+```{r}
+# Fit the linear regression model
+model <- lm(price ~ drug_offences + county, data = merged_data)
+
+# Model summary
+summary(model)
+
+
+
+```
+
+
+
+
+
+```{r}
+
+# View model coefficients
+tidy(model)
+
+# Check R-squared value
+glance(model)
+
+
+```
+
+
+
+```{r}
+# View model coefficients
+tidy(model)
+
+# Check R-squared value
+glance(model)
+
+
+```
+
+
+
+```{r}
+# Predict house prices using the model
+merged_data[, predicted_price := predict(model, newdata = merged_data)]
+
+# Residual plot
+ggplot(merged_data, aes(x = predicted_price, y = price - predicted_price)) +
+  geom_point(alpha = 0.6) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "red") +
+  labs(title = "Residuals Plot: House Price Predictions",
+       x = "Predicted Price (£)",
+       y = "Residual (Actual - Predicted)") +
+  theme_minimal()
+
+
+```
+
+```{r}
+# Save the optimized cleaned dataset with predictions
+fwrite(merged_data, "house_price_crime_model_data.csv")
+
+# Confirm file is saved
+cat("Final dataset saved as 'house_price_crime_model_data.csv'.")
+
+
+```

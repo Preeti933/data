@@ -1,0 +1,135 @@
+```{r setup, include=FALSE}
+# Load necessary libraries
+library(dplyr)
+library(ggplot2)
+library(tidyr)
+```
+
+### **1. Load and Clean Data**
+```{r load-data}
+# Read the datasets
+house_price_data <- read.csv("house_price_2022_with_lsoa.csv", stringsAsFactors = FALSE)
+school_data <- read.csv("merged_school_data_with_lsoa.csv", stringsAsFactors = FALSE)
+
+# Ensure column names are consistent
+colnames(house_price_data) <- tolower(colnames(house_price_data))
+colnames(school_data) <- tolower(colnames(school_data))
+
+# Select relevant columns
+house_price_data <- house_price_data %>% select(price, lsoa11cd, county)
+school_data <- school_data %>% select(lsoa11cd, att8scr)
+
+# Convert to numeric in case of incorrect data types
+house_price_data$price <- as.numeric(gsub("[^0-9.]", "", house_price_data$price))
+school_data$att8scr <- as.numeric(gsub("[^0-9.]", "", school_data$att8scr))
+
+# Show first few rows of both datasets
+print(head(house_price_data))
+print(head(school_data))
+```
+
+### **2. Merge Datasets on lsoa11cd and Filter Counties**
+```{r merge-data}
+# Ensure unique values per LSOA before merging
+house_price_data <- house_price_data %>% distinct(lsoa11cd, county, .keep_all = TRUE)
+school_data <- school_data %>% distinct(lsoa11cd, .keep_all = TRUE)
+
+# Merge house prices with school attainment scores
+merged_data <- house_price_data %>% 
+  inner_join(school_data, by = "lsoa11cd")
+
+# Show merged data
+print(head(merged_data))
+
+# Normalize county names to avoid mismatches
+merged_data$county <- trimws(tolower(merged_data$county))
+
+# Show unique county names to debug
+print(unique(merged_data$county))
+
+# Filter for Devon and Dorset counties
+filtered_data <- merged_data %>% filter(county %in% c("devon", "dorset"))
+
+# Show filtered dataset after applying county filter
+print(nrow(filtered_data))
+print(head(filtered_data))
+```
+
+### **3. Compute Average House Price per County**
+```{r avg-house-price}
+# Ensure filtered data has numeric values
+filtered_data$price <- as.numeric(filtered_data$price)
+filtered_data$att8scr <- as.numeric(filtered_data$att8scr)
+
+# Compute average house price by county
+avg_price_data <- filtered_data %>% 
+  group_by(county) %>% 
+  summarise(avg_price = mean(price, na.rm = TRUE), 
+            avg_att8scr = mean(att8scr, na.rm = TRUE))
+
+# Show computed averages
+print(avg_price_data)
+```
+
+### **4. Visualize Data**
+```{r visualization}
+# Check if filtered_data has rows
+if (nrow(filtered_data) > 0) {
+  print("Plotting data...")
+  
+  # Scatterplot
+  p1 <- ggplot(filtered_data, aes(x = price, y = att8scr, color = county)) +
+    geom_point() +
+    geom_smooth(method = "lm", se = FALSE) +
+    labs(title = "Attainment 8 Score vs House Price", x = "House Price", y = "Attainment 8 Score")
+  print(p1)
+  
+  # Boxplot
+  p2 <- ggplot(filtered_data, aes(x = county, y = att8scr, fill = county)) +
+    geom_boxplot() +
+    labs(title = "Distribution of Attainment 8 Scores by County")
+  print(p2)
+  
+  # Barplot of Average House Price vs Average Attainment 8 Score
+  p3 <- ggplot(avg_price_data, aes(x = county, y = avg_price, fill = county)) +
+    geom_bar(stat = "identity") +
+    labs(title = "Average House Price by County", x = "County", y = "Average House Price")
+  print(p3)
+  
+  # Scatterplot for average attainment 8 score vs house price
+  p4 <- ggplot(avg_price_data, aes(x = avg_price, y = avg_att8scr, label = county)) +
+    geom_point(size = 4, color = "blue") +
+    geom_text(vjust = -1) +
+    labs(title = "Average Attainment 8 Score vs Average House Price", x = "Average House Price", y = "Average Attainment 8 Score")
+  print(p4)
+} else {
+  print("No data available for plotting.")
+}
+```
+
+### **5. Build and Evaluate Linear Model**
+```{r linear-model}
+# Fit linear regression model if data exists
+if (nrow(filtered_data) > 0) {
+  model <- lm(att8scr ~ price + county, data = filtered_data)
+  
+  # Summary of the model
+  print(summary(model))
+  
+  # Check model diagnostics
+  par(mfrow = c(2,2))
+  plot(model)
+} else {
+  print("Not enough data to fit a model.")
+}
+```
+
+### **6. Conclusion**
+```{r conclusion}
+# Print the model summary if available
+if (exists("model")) {
+  print(summary(model))
+} else {
+  print("No model available due to insufficient data.")
+}
+```

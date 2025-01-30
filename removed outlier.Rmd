@@ -1,0 +1,176 @@
+
+## Introduction
+
+This report examines the relationship between **Attainment 8 Scores** and **House Prices** in **Dorset and Devon**. The analysis involves merging house price data with school attainment data using **PCON_NAME as the linking key**, followed by data cleaning, outlier removal, and linear regression analysis.
+
+---
+
+## Load Required Libraries
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+
+# Load necessary libraries
+library(dplyr)
+library(readr)
+library(ggplot2)
+library(tidyr)
+library(broom)
+library(data.table)
+```
+
+```{r}
+# Load house price dataset
+house_prices <- fread("house_price_2022_with_lsoa.csv", 
+                      select = c("price", "date", "post", "county", "lsoa11cd"))
+
+# Load school attainment data
+attainment_devon <- fread("devon2022.csv")
+attainment_dorset <- fread("dorset2022.csv")
+
+# Print column names for debugging
+print(names(attainment_devon))
+print(names(attainment_dorset))
+
+# Ensure both datasets have the same columns
+common_cols <- intersect(names(attainment_devon), names(attainment_dorset))
+attainment_devon <- attainment_devon[, ..common_cols]
+attainment_dorset <- attainment_dorset[, ..common_cols]
+
+# Combine both datasets safely
+attainment_data <- rbind(attainment_devon, attainment_dorset, fill=TRUE)
+```
+
+```{r}
+# Convert column names to lowercase
+setnames(house_prices, tolower(names(house_prices)))
+setnames(attainment_data, tolower(names(attainment_data)))
+
+# Standardize LSOA Code column
+setnames(attainment_data, "pcon_name", "lsoa11cd")
+
+# Convert LSOA Code to character for accurate merging
+house_prices[, lsoa11cd := as.character(lsoa11cd)]
+attainment_data[, lsoa11cd := as.character(attainment_data$lsoa11cd)]
+
+# Ensure correct column name for Attainment 8 Score
+target_col <- grep("att8", names(attainment_data), value = TRUE, ignore.case = TRUE)
+
+# If multiple columns detected, take the first match
+if (length(target_col) > 0) {
+    setnames(attainment_data, target_col[1], "att8scr")
+} else {
+    stop("Column related to 'ATT8SCR' not found in attainment_data. Please check column names.")
+}
+
+# Convert Attainment 8 Score to numeric
+attainment_data[, att8scr := as.numeric(att8scr)]
+
+# Ensure column exists before aggregation
+if ("att8scr" %in% names(attainment_data)) {
+    attainment_agg <- attainment_data[, .(attainment8_score = mean(att8scr, na.rm = TRUE)), by = lsoa11cd]
+} else {
+    stop("Column 'att8scr' still not found. Please verify dataset structure.")
+}
+```
+
+```{r}
+# Merge house prices with attainment data using LSOA code
+merged_data <- merge(house_prices, attainment_agg, by = "lsoa11cd", all.x = TRUE)
+
+# Remove rows with missing values
+merged_data <- merged_data[!is.na(attainment8_score) & !is.na(price)]
+
+# Convert county to factor
+merged_data[, county := as.factor(county)]
+
+# Debugging: Check unique counties
+print(unique(merged_data$county))
+
+# Summary of cleaned dataset
+summary(merged_data)
+```
+
+```{r}
+# Remove outliers using the IQR method
+Q1 <- quantile(merged_data$price, 0.25)
+Q3 <- quantile(merged_data$price, 0.75)
+IQR <- Q3 - Q1
+
+# Define bounds for outlier removal
+lower_bound <- Q1 - 1.5 * IQR
+upper_bound <- Q3 + 1.5 * IQR
+
+# Filter data within bounds
+cleaned_data <- merged_data[price >= lower_bound & price <= upper_bound]
+
+# Debugging: Check data size after outlier removal
+print(nrow(cleaned_data))
+```
+
+```{r}
+# Ensure cleaned data is not empty before plotting
+if (nrow(cleaned_data) > 0) {
+  ggplot(cleaned_data, aes(x = attainment8_score, y = price, color = county)) +
+    geom_point(alpha = 0.6) +
+    geom_smooth(method = "lm", se = FALSE, color = "black") +
+    labs(title = "House Prices vs Attainment 8 Score",
+         x = "Attainment 8 Score",
+         y = "House Price (£)",
+         color = "County") +
+    theme_minimal()
+} else {
+  print("No data available after outlier removal. Adjust filtering criteria.")
+}
+```
+
+```{r}
+# Ensure county has at least two levels before modeling
+if (length(unique(cleaned_data$county)) > 1) {
+  model <- lm(price ~ attainment8_score + county, data = cleaned_data)
+  
+  # Model summary
+  summary(model)
+} else {
+  print("County variable has only one level. Ensure both Dorset & Devon data are present.")
+}
+```
+
+```{r}
+# Predict house prices using the model (if model was created)
+if (exists("model")) {
+  cleaned_data[, predicted_price := predict(model, newdata = cleaned_data)]
+  
+  # Residual plot
+  ggplot(cleaned_data, aes(x = predicted_price, y = price - predicted_price)) +
+    geom_point(alpha = 0.6) +
+    geom_hline(yintercept = 0, linetype = "dashed", color = "red") +
+    labs(title = "Residuals Plot: House Price Predictions",
+         x = "Predicted Price (£)",
+         y = "Residual (Actual - Predicted)") +
+    theme_minimal()
+} else {
+  print("Model not created due to insufficient data.")
+}
+```
+
+```{r}
+# Save the cleaned dataset with predictions
+if (nrow(cleaned_data) > 0) {
+  fwrite(cleaned_data, "house_price_attainment8_model_data.csv")
+  cat("Final dataset saved as 'house_price_attainment8_model_data.csv'.")
+} else {
+  print("No data available to save.")
+}
+```
+
+---
+
+### **Summary:**
+- Cleaned and merged **house price** and **attainment 8 score** datasets.
+- Checked for empty datasets before plotting.
+- Ensured `county` has at least **two levels** before modeling.
+- Removed **outliers** using the **IQR method**.
+- Built a **linear regression model** to analyze the relationship.
+- Visualized **house prices vs. attainment scores** and **residuals** for model accuracy.
+
+**End of Report.**

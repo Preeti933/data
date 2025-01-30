@@ -1,0 +1,78 @@
+
+
+## Introduction
+
+This R Markdown file merges the **broadband.csv** dataset with the **postcode.csv** dataset to append the `lsoa11cd` column based on the `postcode` field. It uses `pcd7`, `pcd8`, or `pcds` for matching.
+
+---
+
+## Load Required Libraries
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+
+# Load required libraries
+library(dplyr)
+library(readr)
+```
+
+```{r}
+
+# Read broadband dataset
+broadband <- read_csv("broadband.csv")
+
+# Read postcode dataset
+postcode_data <- read_csv("postcode.csv")
+
+
+
+```
+
+
+
+
+```{r}
+# Convert column names to lowercase for consistency
+colnames(broadband) <- tolower(colnames(broadband))
+colnames(postcode_data) <- tolower(colnames(postcode_data))
+
+# Select only relevant columns from postcode dataset
+postcode_data <- postcode_data %>% select(pcd7, pcd8, pcds, lsoa11cd)
+
+# Function to merge broadband dataset with LSOA codes
+merge_lsoa <- function(data) {
+  data <- data %>%
+    left_join(postcode_data %>% select(pcd7, lsoa11cd), by = c("postcode" = "pcd7")) %>%
+    rename(lsoa11cd_pcd7 = lsoa11cd) %>%
+    left_join(postcode_data %>% select(pcd8, lsoa11cd), by = c("postcode" = "pcd8")) %>%
+    rename(lsoa11cd_pcd8 = lsoa11cd) %>%
+    left_join(postcode_data %>% select(pcds, lsoa11cd), by = c("postcode" = "pcds")) %>%
+    rename(lsoa11cd_pcds = lsoa11cd)
+
+  # Ensure missing columns are created if they do not exist
+  if (!"lsoa11cd_pcd7" %in% colnames(data)) data$lsoa11cd_pcd7 <- NA
+  if (!"lsoa11cd_pcd8" %in% colnames(data)) data$lsoa11cd_pcd8 <- NA
+  if (!"lsoa11cd_pcds" %in% colnames(data)) data$lsoa11cd_pcds <- NA
+
+  # Use coalesce to prioritize pcd7, then pcd8, then pcds
+  data <- data %>%
+    mutate(lsoa11cd = coalesce(lsoa11cd_pcd7, lsoa11cd_pcd8, lsoa11cd_pcds)) %>%
+    select(-lsoa11cd_pcd7, -lsoa11cd_pcd8, -lsoa11cd_pcds)
+
+  return(data)
+}
+
+# Apply function to broadband dataset
+broadband <- merge_lsoa(broadband)
+
+
+```
+
+```{r}
+# Export updated broadband dataset with LSOA codes
+write_csv(broadband, "broadband_with_lsoa.csv")
+
+# Confirm file is saved
+cat("Updated broadband dataset saved as 'broadband_with_lsoa.csv'.")
+
+
+```

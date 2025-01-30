@@ -1,0 +1,35 @@
+
+```{r}
+# Load necessary library
+library(dplyr)
+
+file.exists("merged_school_data.csv")
+
+# Read the datasets
+school_data <- read.csv("merged_school_data.csv", stringsAsFactors = FALSE)
+postcode_data <- read.csv("Postcode.csv", stringsAsFactors = FALSE)
+
+# Ensure postcode columns are in the same format (uppercase and no extra spaces)
+school_data$PCODE <- toupper(trimws(school_data$PCODE))
+postcode_data$pcd7 <- toupper(trimws(postcode_data$pcd7))
+postcode_data$pcd8 <- toupper(trimws(postcode_data$pcd8))
+postcode_data$pcds <- toupper(trimws(postcode_data$pcds))
+
+# Merge by matching postcode (PCODE) with pcd7, pcd8, or pcds
+merged_data <- school_data %>% 
+  left_join(postcode_data %>% select(pcd7, lsoa11cd), by = c("PCODE" = "pcd7")) %>%
+  left_join(postcode_data %>% select(pcd8, lsoa11cd), by = c("PCODE" = "pcd8")) %>%
+  left_join(postcode_data %>% select(pcds, lsoa11cd), by = c("PCODE" = "pcds"))
+
+# Consolidate lsoa11cd values (some may be NA due to missing matches in some columns)
+merged_data$lsoa11cd <- coalesce(merged_data$lsoa11cd.x, merged_data$lsoa11cd.y, merged_data$lsoa11cd)
+
+# Drop unnecessary columns
+merged_data <- merged_data %>% select(-c(lsoa11cd.x, lsoa11cd.y))
+
+# Save the merged dataset
+write.csv(merged_data, "merged_school_data_with_lsoa.csv", row.names = FALSE)
+
+# Output file ready for download
+cat("Merged file saved as 'merged_school_data_with_lsoa.csv'\n")
+```

@@ -1,0 +1,146 @@
+```{r setup, include=FALSE}
+# Load necessary libraries
+library(dplyr)
+library(ggplot2)
+library(tidyr)
+```
+
+### **1. Load and Clean Data**
+```{r load-data}
+# Read the datasets
+crime_data <- read.csv("final_combined_crime_data.csv", stringsAsFactors = FALSE)
+school_data <- read.csv("merged_school_data_with_lsoa.csv", stringsAsFactors = FALSE)
+
+# Ensure column names are correctly formatted
+colnames(crime_data) <- tolower(gsub(" ", "_", gsub("\\.", "_", colnames(crime_data))))
+colnames(school_data) <- tolower(gsub(" ", "_", gsub("\\.", "_", colnames(school_data))))
+
+# Print column names to debug
+print(colnames(crime_data))
+print(colnames(school_data))
+
+# Select relevant columns
+crime_data <- crime_data %>% select(lsoa_code, falls_within, month, crime_type)
+school_data <- school_data %>% select(lsoa11cd, att8scr, year)
+
+# Normalize county names
+crime_data$falls_within <- trimws(tolower(crime_data$falls_within))
+crime_data <- crime_data %>% mutate(county = case_when(
+  falls_within == "devon & cornwall police" ~ "devon",
+  falls_within == "dorset police" ~ "dorset",
+  TRUE ~ NA_character_
+))
+
+# Extract year from month column
+crime_data$year <- as.integer(substr(crime_data$month, 1, 4))
+school_data$year <- as.integer(school_data$year)
+
+# Convert att8scr to numeric (handling non-numeric values like "SUPP")
+school_data$att8scr <- as.numeric(gsub("[^0-9.]", "", school_data$att8scr))
+
+# Show first few rows of both datasets
+print(head(crime_data))
+print(head(school_data))
+```
+
+### **2. Compute Crime Rate by LSOA and Merge with School Data**
+```{r compute-crime-rate}
+# Count total crimes per LSOA per year
+total_crimes <- crime_data %>%
+  group_by(lsoa_code, year) %>%
+  summarise(total_crimes = n(), .groups = 'drop')
+
+# Count drug-related crimes per LSOA per year
+drug_crimes <- crime_data %>%
+  filter(crime_type == "Drugs") %>%
+  group_by(lsoa_code, year) %>%
+  summarise(total_drug_crimes = n(), .groups = 'drop')
+
+# Compute drug offence rate
+crime_rate <- left_join(total_crimes, drug_crimes, by = c("lsoa_code", "year")) %>%
+  mutate(drug_offence_rate = (total_drug_crimes / total_crimes) * 100)
+
+# Merge with school data
+merged_data <- left_join(crime_rate, school_data, by = c("lsoa_code" = "lsoa11cd", "year" = "year"))
+
+# Debugging: Show merged dataset
+print(nrow(merged_data))
+print(head(merged_data))
+
+# Filter for Devon and Dorset counties (ensure `county` exists)
+merged_data <- left_join(merged_data, crime_data %>% select(lsoa_code, county), by = "lsoa_code")
+filtered_data <- merged_data %>% filter(!is.na(county) & county %in% c("devon", "dorset"))
+
+# Debugging: Show filtered dataset after applying county filter
+print(nrow(filtered_data))
+print(head(filtered_data))
+```
+
+### **3. Compute Average Drug Offence Rate per County**
+```{r avg-drug-offence-rate}
+# Compute average drug offence rate per county
+avg_crime_data <- filtered_data %>%
+  group_by(county) %>%
+  summarise(avg_drug_offence_rate = mean(drug_offence_rate, na.rm = TRUE), 
+            avg_att8scr = mean(att8scr, na.rm = TRUE), .groups = 'drop')
+
+# Show computed averages
+print(avg_crime_data)
+```
+
+### **4. Visualize Data**
+```{r visualization}
+# Check if filtered_data has rows
+if (nrow(filtered_data) > 0) {
+  print("Plotting data...")
+  
+  # Scatterplot
+  p1 <- ggplot(filtered_data, aes(x = drug_offence_rate, y = att8scr, color = county)) +
+    geom_point() +
+    geom_smooth(method = "lm", se = FALSE) +
+    labs(title = "Attainment 8 Score vs Drug Offence Rate", x = "Drug Offence Rate (%)", y = "Attainment 8 Score")
+  print(p1)
+  
+  # Barplot of Average Drug Offence Rate vs Attainment 8 Score
+  p2 <- ggplot(avg_crime_data, aes(x = county, y = avg_drug_offence_rate, fill = county)) +
+    geom_bar(stat = "identity") +
+    labs(title = "Average Drug Offence Rate by County", x = "County", y = "Average Drug Offence Rate (%)")
+  print(p2)
+  
+  # Scatterplot for average attainment 8 score vs drug offence rate
+  p3 <- ggplot(avg_crime_data, aes(x = avg_drug_offence_rate, y = avg_att8scr, label = county)) +
+    geom_point(size = 4, color = "blue") +
+    geom_text(vjust = -1) +
+    labs(title = "Average Attainment 8 Score vs Drug Offence Rate", x = "Average Drug Offence Rate (%)", y = "Average Attainment 8 Score")
+  print(p3)
+} else {
+  print("No data available for plotting.")
+}
+```
+
+### **5. Build and Evaluate Linear Model**
+```{r linear-model}
+# Fit linear regression model if data exists
+if (nrow(filtered_data) > 0) {
+  model <- lm(att8scr ~ drug_offence_rate + county, data = filtered_data)
+  
+  # Summary of the model
+  print(summary(model))
+  
+  # Check model diagnostics
+  par(mfrow = c(2,2))
+  plot(model)
+} else {
+  print("Not enough data to fit a model.")
+}
+```
+
+### **6. Conclusion**
+```{r conclusion}
+# Print the model summary if available
+if (exists("model")) {
+  print(summary(model))
+} else {
+  print("No model available due to insufficient data.")
+}
+```
